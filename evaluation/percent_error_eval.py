@@ -66,9 +66,9 @@ for (label, percent_errors), color in zip(percent_errors_data.items(), colors):
 
 plt.xlim(0, MAX_PERCENT_ERROR)
 plt.ylim(0, None)
-plt.xlabel("Percent Error (%)", fontsize=14)
-plt.ylabel("Density", fontsize=14)
-plt.title("Density Plot of Percent Error Across Models", fontsize=16)
+plt.xlabel("Percent Error (%)", fontsize=14, weight="bold")
+plt.ylabel("Density", fontsize=14, weight="bold")
+plt.title("Density Plot of Percent Error Across Models", fontsize=16, weight="bold")
 plt.legend(title="Models", fontsize=12, loc="upper right")
 plt.grid(alpha=0.3)
 plt.tight_layout()

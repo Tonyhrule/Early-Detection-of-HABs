@@ -53,15 +53,15 @@ fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(14, 10), gridspec_kw=
 
 ax1.plot(range(1, len(base_model_mse) + 1), base_model_mse, label="Base Model", color="blue", marker="o", linewidth=2)
 ax1.set_ylim(0.03, 0.04)
-ax1.set_ylabel("MSE (Base Model)", fontsize=12)
+ax1.set_ylabel("MSE (Base Model)", fontsize=14, weight="bold")
 ax1.grid(alpha=0.3)
 
 colors = ['orange', 'green', 'red', 'purple', 'brown']
 for (label, mse_scores), color in zip(synthetic_results.items(), colors):
     ax2.plot(range(1, len(mse_scores) + 1), mse_scores, label=label, marker="o", linestyle="-", color=color, linewidth=1.5, alpha=0.8)
 ax2.set_ylim(0.004, 0.008)
-ax2.set_xlabel("Fold", fontsize=12)
-ax2.set_ylabel("MSE (Synthetic Models)", fontsize=12)
+ax2.set_xlabel("Fold", fontsize=14, weight="bold")
+ax2.set_ylabel("MSE (Synthetic Models)", fontsize=14, weight="bold")
 ax2.grid(alpha=0.3)
 
 for i in range(1, len(base_model_mse) + 1):
