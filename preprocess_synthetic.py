@@ -1,15 +1,16 @@
 import os
-import time
 import joblib
 import pandas as pd
-import json
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor
+from copulas.multivariate import GaussianMultivariate
+from scipy.stats import ks_2samp
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from dotenv import load_dotenv
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Load environment variables
 load_dotenv()
@@ -17,129 +18,153 @@ load_dotenv()
 # Configuration Parameters
 DATA_PATH = "Dataset.xlsx"
 OUTPUT_DIR = "output"
-SYNTHETIC_DATA_BATCHES = 4
-SYNTHETIC_DATA_ROWS = 50
-TEMP_RANGE = (15, 20)
-SALINITY_RANGE = (34, 35)
-UVB_RANGE = (30, 80)
-CHLOROPHYLL_RANGE = (5, 15)
+SYNTHETIC_DATA_ROWS = 10  
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
-
-# Expected columns for the dataset
-EXPECTED_COLUMNS = ["Temperature", "Salinity", "UVB", "ChlorophyllaFlor"]
+FEATURES = ["Temperature", "Salinity", "UVB"]
+TARGET = "ChlorophyllaFlor"
 
 def load_data(data_path):
-    """Loads the dataset from an Excel file."""
+    """Loads the dataset."""
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Dataset not found at path: {data_path}")
-    print("Loading dataset...")
+        raise FileNotFoundError(f"Dataset not found at {data_path}")
     return pd.read_excel(data_path)
 
 def validate_structure(df):
     """Validates that the DataFrame matches the expected structure."""
-    if not all(col in df.columns for col in EXPECTED_COLUMNS):
-        raise ValueError(f"DataFrame columns do not match expected structure: {EXPECTED_COLUMNS}")
+    required_columns = FEATURES + [TARGET]
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError(f"DataFrame does not contain required columns: {required_columns}")
     print("Dataset structure validated.")
 
-def generate_synthetic_data(batch_size, rows_per_batch):
-    """Generates synthetic data using GPT-4 with structured output."""
-    synthetic_data_list = []
+def clean_data(data):
+    """Removes rows with missing values."""
+    original_shape = data.shape
+    data = data.dropna()
+    print(f"Original shape: {original_shape}, Cleaned shape: {data.shape}")
+    return data
 
-    for _ in range(batch_size):
-        print("Generating synthetic data batch...")
-        try:
-            response = client.chat.completions.create(model="gpt-4-0613",
-            messages=[
-                {"role": "system", "content": "You are a data generator for environmental science."},
-                {"role": "user", "content": f"Generate {rows_per_batch} rows of structured environmental data with the following ranges:\n"
-                                             f"- Temperature: {TEMP_RANGE[0]} to {TEMP_RANGE[1]} (°C)\n"
-                                             f"- Salinity: {SALINITY_RANGE[0]} to {SALINITY_RANGE[1]} (PSU)\n"
-                                             f"- UVB: {UVB_RANGE[0]} to {UVB_RANGE[1]} (mW/m²)\n"
-                                             f"- ChlorophyllaFlor: {CHLOROPHYLL_RANGE[0]} to {CHLOROPHYLL_RANGE[1]} (µg/L)\n"
-                                             "Return the data as an array of JSON objects with keys: Temperature, Salinity, UVB, ChlorophyllaFlor."}
-            ],
-            functions=[
-                {
-                    "name": "generate_data",
-                    "description": "Generate structured environmental data.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "data": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "Temperature": {"type": "number", "minimum": TEMP_RANGE[0], "maximum": TEMP_RANGE[1]},
-                                        "Salinity": {"type": "number", "minimum": SALINITY_RANGE[0], "maximum": SALINITY_RANGE[1]},
-                                        "UVB": {"type": "number", "minimum": UVB_RANGE[0], "maximum": UVB_RANGE[1]},
-                                        "ChlorophyllaFlor": {"type": "number", "minimum": CHLOROPHYLL_RANGE[0], "maximum": CHLOROPHYLL_RANGE[1]}
-                                    },
-                                    "required": ["Temperature", "Salinity", "UVB", "ChlorophyllaFlor"]
-                                }
-                            }
-                        },
-                        "required": ["data"]
-                    }
-                }
-            ])
+def transform_target(data):
+    """Applies a log transformation to the target variable."""
+    print("Applying log transformation to the target variable...")
+    data[TARGET] = np.log1p(data[TARGET])
+    return data
 
-            # Extract the function call arguments and parse as JSON
-            function_call_arguments = response.choices[0].message.function_call.arguments
-            structured_data = json.loads(function_call_arguments)["data"]
-            batch_df = pd.DataFrame(structured_data)
+def generate_conditional_synthetic_data(data, num_samples):
+    """Generates synthetic data using Gaussian Copula."""
+    print("Generating synthetic data using Gaussian Copula...")
+    model = GaussianMultivariate()
+    model.fit(data)
+    synthetic_data = model.sample(num_samples)
+    synthetic_data = pd.DataFrame(synthetic_data, columns=data.columns)
+    synthetic_data = clip_synthetic_data(synthetic_data, data)
+    print("Synthetic data generated successfully.")
+    return synthetic_data
 
-            # Validate and append batch
-            validate_structure(batch_df)
-            synthetic_data_list.append(batch_df)
-            print("Synthetic data batch generated successfully.")
-        except Exception as e:
-            print(f"Error generating synthetic data batch: {e}")
-            continue
+def clip_synthetic_data(synthetic_data, real_data):
+    """Clips synthetic data to match real data ranges."""
+    for column in synthetic_data.columns:
+        synthetic_data[column] = synthetic_data[column].clip(real_data[column].min(), real_data[column].max())
+    return synthetic_data
 
-    if synthetic_data_list:
-        return pd.concat(synthetic_data_list, ignore_index=True)
-    else:
-        raise ValueError("No synthetic data generated. Check the generation process.")
+def perform_ks_test(data, synthetic_data):
+    """Performs KS test to compare distributions between real and synthetic data."""
+    print("\nPerforming KS test...")
+    for column in FEATURES + [TARGET]:
+        stat, p_value = ks_2samp(data[column], synthetic_data[column])
+        print(f"{column}: KS Statistic = {stat}, p-value = {p_value}")
 
-def preprocess_and_combine(data, synthetic_data):
+def preprocess_and_combine(real_data, synthetic_data, weight=0.20):
     """Preprocesses and combines real and synthetic data."""
-    combined_data = pd.concat([data, synthetic_data], ignore_index=True)
+    print("Combining real and synthetic data...")
+    synthetic_data_sampled = synthetic_data.sample(frac=weight, random_state=RANDOM_STATE, replace=True)
+    combined_data = pd.concat([real_data, synthetic_data_sampled], ignore_index=True)
 
-    X = combined_data[['Temperature', 'Salinity', 'UVB']]
-    y = combined_data['ChlorophyllaFlor']
+    X = combined_data[FEATURES]
+    y = combined_data[TARGET]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
+    # Add polynomial interaction terms for better feature representation
+    poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+    X_poly = poly.fit_transform(X)
 
-    imputer = SimpleImputer(strategy='mean')
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X_poly, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
+
+    # Handle missing values
+    imputer = SimpleImputer(strategy="median")
     X_train = imputer.fit_transform(X_train)
     X_test = imputer.transform(X_test)
 
-    poly = PolynomialFeatures(degree=2, include_bias=False)
-    X_train_poly = poly.fit_transform(X_train)
-    X_test_poly = poly.transform(X_test)
-
+    # Feature scaling
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train_poly)
-    X_test_scaled = scaler.transform(X_test_poly)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
     return X_train_scaled, X_test_scaled, y_train, y_test, scaler
 
+def reverse_log_transformation(y_test, y_pred):
+    """Reverses log transformation for evaluation metrics."""
+    y_test_reversed = np.expm1(y_test)
+    y_pred_reversed = np.expm1(y_pred)
+    return y_test_reversed, y_pred_reversed
+
+def evaluate_model_performance(y_test, y_pred):
+    """Evaluates model performance after reversing log transformation."""
+    y_test_reversed, y_pred_reversed = reverse_log_transformation(y_test, y_pred)
+    mse = mean_squared_error(y_test_reversed, y_pred_reversed)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_test_reversed, y_pred_reversed)
+    r2 = r2_score(y_test_reversed, y_pred_reversed)
+    print(f"  MSE: {mse}")
+    print(f"  RMSE: {rmse}")
+    print(f"  MAE: {mae}")
+    print(f"  R² Score: {r2}")
+
+def train_and_evaluate_models(X_train_scaled, X_test_scaled, y_train, y_test):
+    """Trains and evaluates Ridge and Random Forest models."""
+    print("\nTraining Ridge Regression model...")
+    ridge_model = Ridge(alpha=10.0)
+    ridge_model.fit(X_train_scaled, y_train)
+    y_pred_ridge = ridge_model.predict(X_test_scaled)
+    print("Ridge Regression Performance:")
+    evaluate_model_performance(y_test, y_pred_ridge)
+
+    print("\nTraining Random Forest model...")
+    rf_model = RandomForestRegressor(n_estimators=600, max_depth=30, min_samples_split=4, random_state=RANDOM_STATE)
+    rf_model.fit(X_train_scaled, y_train)
+    y_pred_rf = rf_model.predict(X_test_scaled)
+    print("Random Forest Performance:")
+    evaluate_model_performance(y_test, y_pred_rf)
+
 def save_data(X_train_scaled, X_test_scaled, y_train, y_test, scaler, output_dir):
-    """Saves processed data and scaler to disk."""
+    """Saves processed data and scaler."""
     os.makedirs(output_dir, exist_ok=True)
-    joblib.dump((X_train_scaled, X_test_scaled, y_train, y_test), os.path.join(output_dir, 'processed_data_with_synthetic.pkl'))
-    joblib.dump(scaler, os.path.join(output_dir, 'scaler_with_synthetic.pkl'))
+    joblib.dump((X_train_scaled, X_test_scaled, y_train, y_test), os.path.join(output_dir, "processed_data_with_synthetic.pkl"))
+    joblib.dump(scaler, os.path.join(output_dir, "scaler_with_synthetic.pkl"))
 
 def main():
-    """Main function to execute the synthetic preprocessing pipeline."""
+    """Main function for the synthetic preprocessing pipeline."""
     data = load_data(DATA_PATH)
-    validate_structure(data)  # Validate real dataset structure
-    synthetic_data = generate_synthetic_data(SYNTHETIC_DATA_BATCHES, SYNTHETIC_DATA_ROWS)
-    X_train_scaled, X_test_scaled, y_train, y_test, scaler = preprocess_and_combine(data, synthetic_data)
+    validate_structure(data)
+
+    # Clean and transform real data
+    data_cleaned = clean_data(data)
+    data_transformed = transform_target(data_cleaned)
+
+    # Generate synthetic data
+    synthetic_data = generate_conditional_synthetic_data(data_transformed, SYNTHETIC_DATA_ROWS)
+
+    # Perform KS test
+    perform_ks_test(data_transformed, synthetic_data)
+
+    # Preprocess and combine data
+    X_train_scaled, X_test_scaled, y_train, y_test, scaler = preprocess_and_combine(data_transformed, synthetic_data, weight=0.20)
+
+    # Train and evaluate models
+    train_and_evaluate_models(X_train_scaled, X_test_scaled, y_train, y_test)
+
+    # Save processed data
     save_data(X_train_scaled, X_test_scaled, y_train, y_test, scaler, OUTPUT_DIR)
-    print("Preprocessing with synthetic data completed successfully.")
 
 if __name__ == "__main__":
     main()

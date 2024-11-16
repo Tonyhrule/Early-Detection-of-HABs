@@ -66,10 +66,9 @@ output_file = os.path.join(figures_dir, "percent_error_density.png")
 plt.savefig(output_file, dpi=300)
 print(f"Plot saved as {output_file}")
 
-# Display the plot
-plt.show()
-
-# Print summary metrics
 print("\nSummary of Percent Error:")
 print(f"Average Percent Error for Non-Synthetic Data: {avg_percent_error_non_synthetic:.2f}%")
 print(f"Average Percent Error for Synthetic Data: {avg_percent_error_synthetic:.2f}%")
+
+plt.show()
+
