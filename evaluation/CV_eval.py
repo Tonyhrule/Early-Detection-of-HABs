@@ -4,67 +4,87 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import cross_val_score, RepeatedKFold
 
-# Directories
 output_dir = "output"
-models_dir = "models"
+base_model_dir = "base model"
+synthetic_models_dir = "synthetic models"
+data_dir = "data s"
 figures_dir = "figures"
 os.makedirs(figures_dir, exist_ok=True)
 
-# Function to perform cross-validation and return results
-def cross_validate_model(synthetic):
-    """Cross-validate the model and calculate MSE for synthetic or non-synthetic data."""
-    # Determine paths based on synthetic flag
-    model_path = os.path.join(models_dir, "model_with_synthetic.pkl" if synthetic else "model_non_synthetic.pkl")
-    data_path = os.path.join(output_dir, "processed_data_with_synthetic.pkl" if synthetic else "processed_data.pkl")
+model_paths = {
+    "Base Model": os.path.join(base_model_dir, "model_base.pkl"),
+    "Synthetic 100": os.path.join(synthetic_models_dir, "model_synthetic_100.pkl"),
+    "Synthetic 250": os.path.join(synthetic_models_dir, "model_synthetic_250.pkl"),
+    "Synthetic 500": os.path.join(synthetic_models_dir, "model_synthetic_500.pkl"),
+    "Synthetic 750": os.path.join(synthetic_models_dir, "model_synthetic_750.pkl"),
+    "Synthetic 1000": os.path.join(synthetic_models_dir, "model_synthetic_1000.pkl"),
+}
 
-    # Load model and data
+data_paths = {
+    "Base Model": os.path.join(output_dir, "processed_data.pkl"),
+    "Synthetic 100": os.path.join(data_dir, "syn_data_100.pkl"),
+    "Synthetic 250": os.path.join(data_dir, "syn_data_250.pkl"),
+    "Synthetic 500": os.path.join(data_dir, "syn_data_500.pkl"),
+    "Synthetic 750": os.path.join(data_dir, "syn_data_750.pkl"),
+    "Synthetic 1000": os.path.join(data_dir, "syn_data_1000.pkl"),
+}
+
+def cross_validate_model(model_path, data_path):
     model = joblib.load(model_path)
     X_train, X_test, y_train, y_test = joblib.load(data_path)
-
-    # Remove NaN values from y_train and corresponding entries in X_train
     mask = ~np.isnan(y_train)
     X_train = X_train[mask]
     y_train = y_train[mask]
-
-    # Cross-validation setup
     cv = RepeatedKFold(n_splits=10, n_repeats=1, random_state=42)
-    
-    # Display progress
-    print(f"Running cross-validation for {'synthetic' if synthetic else 'non-synthetic'} data...")
-
-    # Perform cross-validation and calculate MSE scores
     cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='neg_mean_squared_error', n_jobs=-1)
-    mse_scores = -cv_scores  # Convert to positive MSE
-    mean_mse = mse_scores.mean()
-    print(f"Mean MSE for {'synthetic' if synthetic else 'non-synthetic'} data: {mean_mse:.4f}")
+    mse_scores = -cv_scores
+    return mse_scores, mse_scores.mean()
 
-    return mse_scores, mean_mse
+results = {}
+for label, model_path in model_paths.items():
+    data_path = data_paths[label]
+    mse_scores, mean_mse = cross_validate_model(model_path, data_path)
+    results[label] = (mse_scores, mean_mse)
 
-# Run cross-validation for both synthetic and non-synthetic data
-mse_scores_non_synthetic, mean_mse_non_synthetic = cross_validate_model(synthetic=False)
-mse_scores_synthetic, mean_mse_synthetic = cross_validate_model(synthetic=True)
+base_model_mse = results["Base Model"][0]
+synthetic_results = {key: results[key][0] for key in results if key != "Base Model"}
 
-# Plot cross-validation results for both synthetic and non-synthetic data
-plt.figure(figsize=(10, 6))
-plt.plot(range(1, len(mse_scores_non_synthetic) + 1), mse_scores_non_synthetic, label="Non-Synthetic Data", marker='o', linestyle='-', color='blue', alpha=0.8)
-plt.plot(range(1, len(mse_scores_synthetic) + 1), mse_scores_synthetic, label="Synthetic Data", marker='o', linestyle='-', color='orange', alpha=0.8)
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(14, 10), gridspec_kw={'height_ratios': [1, 4]})
 
-# Labels and styling
-plt.xlabel("Fold")
-plt.ylabel("Mean Squared Error")
-plt.title("Cross-Validation Results for Synthetic and Non-Synthetic Models")
-plt.legend()
-plt.grid(alpha=0.3)
+ax1.plot(range(1, len(base_model_mse) + 1), base_model_mse, label="Base Model", color="blue", marker="o", linewidth=2)
+ax1.set_ylim(0.03, 0.04)
+ax1.set_ylabel("MSE (Base Model)", fontsize=12)
+ax1.grid(alpha=0.3)
 
-# Save the plot as PNG
-output_file = os.path.join(figures_dir, "cross_validation_results_solid_lines.png")
+colors = ['orange', 'green', 'red', 'purple', 'brown']
+for (label, mse_scores), color in zip(synthetic_results.items(), colors):
+    ax2.plot(range(1, len(mse_scores) + 1), mse_scores, label=label, marker="o", linestyle="-", color=color, linewidth=1.5, alpha=0.8)
+ax2.set_ylim(0.004, 0.008)
+ax2.set_xlabel("Fold", fontsize=12)
+ax2.set_ylabel("MSE (Synthetic Models)", fontsize=12)
+ax2.grid(alpha=0.3)
+
+for i in range(1, len(base_model_mse) + 1):
+    ax1.axvline(i, color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+    ax2.axvline(i, color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+
+ax1.spines['bottom'].set_visible(False)
+ax2.spines['top'].set_visible(False)
+ax1.tick_params(labeltop=False)
+ax2.tick_params(labelbottom=True)
+d = .007
+kwargs = dict(transform=ax1.transAxes, color='k', clip_on=False)
+ax1.plot((-d, +d), (-d, +d), **kwargs) 
+ax1.plot((1 - d, 1 + d), (-d, +d), **kwargs) 
+kwargs.update(transform=ax2.transAxes)
+ax2.plot((-d, +d), (1 - d, 1 + d), **kwargs)  
+ax2.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs) 
+
+legend = fig.legend(loc="lower left", fontsize=10, title="Models", bbox_to_anchor=(0.1, 0.15), frameon=True, borderpad=1)
+legend.get_frame().set_edgecolor("black")
+
+plt.suptitle("Cross-Validation Results Across Models", fontsize=16, weight="bold")
+plt.tight_layout(rect=[0, 0.05, 1, 1])
+output_file = os.path.join(figures_dir, "cross_validation_results_improved.png")
 plt.savefig(output_file, dpi=300)
-print(f"Plot saved as {output_file}")
-
-# Show the plot
 plt.show()
-
-# Print final scores in the terminal
-print("\nFinal MSE Scores:")
-print(f"Non-Synthetic Data Mean MSE: {mean_mse_non_synthetic:.4f}")
-print(f"Synthetic Data Mean MSE: {mean_mse_synthetic:.4f}")

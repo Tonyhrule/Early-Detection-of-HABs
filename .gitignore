@@ -1,15 +1,11 @@
-# Python bytecode
+# Ignore folders containing models
+*model*/
+
+# Ignore folders containing datasets
+*data*/
+
+# Basic
 __pycache__/
-
-# Environment variables
 .env
-
-# Archived files
 /archived/
-
-# macOS system files
 .DS_Store
-
-# Model files
-/models/*.pkl
-

@@ -1,33 +1,28 @@
 import os
 import joblib
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.linear_model import Ridge
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV
 import numpy as np
 
-# Paths to processed data files
 DATA_PATH_WITH_SYNTHETIC = "output/processed_data_with_synthetic.pkl"
 DATA_PATH_NON_SYNTHETIC = "output/processed_data.pkl"
 MODEL_OUTPUT_DIR = "models"
 os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
 
 def load_data(path):
-    """Loads processed data from a file."""
     print(f"Loading data from {path}...")
     data = joblib.load(path)
     print(f"Loaded data shapes: X_train={data[0].shape}, y_train={data[2].shape}, X_test={data[1].shape}, y_test={data[3].shape}")
     return data
 
 def reshape_target(y):
-    """Ensures the target variable is 1D."""
     if len(y.shape) > 1:
         print("Reshaping target variable to 1D...")
         y = y.ravel()
     return y
 
 def evaluate_model(model, X_test, y_test):
-    """Evaluates the model using test data."""
     y_pred = model.predict(X_test)
     mse = mean_squared_error(y_test, y_pred)
     rmse = np.sqrt(mse)
@@ -36,16 +31,12 @@ def evaluate_model(model, X_test, y_test):
     return {"MSE": mse, "RMSE": rmse, "MAE": mae, "R²": r2}
 
 def train_and_evaluate(X_train, X_test, y_train, y_test, output_model_path, use_grid_search=False):
-    """Trains and evaluates a GradientBoostingRegressor with optional hyperparameter tuning."""
-    # Ensure target variables are 1D
     y_train = reshape_target(y_train)
     y_test = reshape_target(y_test)
 
-    # Base model
     gb = GradientBoostingRegressor(random_state=42)
 
     if use_grid_search:
-        # Hyperparameter tuning
         param_grid = {
             "n_estimators": [100, 200, 300],
             "learning_rate": [0.01, 0.05, 0.1],
@@ -59,18 +50,15 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, output_model_path, use_
         gb = grid_search.best_estimator_
         print(f"Best parameters: {grid_search.best_params_}")
 
-    # Train the model
     print("Training GradientBoostingRegressor...")
     gb.fit(X_train, y_train)
 
-    # Evaluate the model
     print("Evaluating model on test data...")
     metrics = evaluate_model(gb, X_test, y_test)
     print("Evaluation Metrics:")
     for key, value in metrics.items():
         print(f"  {key}: {value:.4f}")
 
-    # Save the model
     print(f"Saving model to {output_model_path}...")
     joblib.dump(gb, output_model_path)
     print("Model saved successfully.")
@@ -78,17 +66,14 @@ def train_and_evaluate(X_train, X_test, y_train, y_test, output_model_path, use_
     return metrics
 
 def main():
-    """Main function for training models."""
-    # Train with synthetic data
     print("Training with synthetic data...")
     X_train_syn, X_test_syn, y_train_syn, y_test_syn = load_data(DATA_PATH_WITH_SYNTHETIC)[:4]
     synthetic_metrics = train_and_evaluate(
         X_train_syn, X_test_syn, y_train_syn, y_test_syn,
         os.path.join(MODEL_OUTPUT_DIR, "model_with_synthetic.pkl"),
-        use_grid_search=True  # Enable grid search for hyperparameter tuning
+        use_grid_search=True
     )
 
-    # Train with non-synthetic data
     print("\nTraining with non-synthetic data...")
     X_train_non, X_test_non, y_train_non, y_test_non = load_data(DATA_PATH_NON_SYNTHETIC)[:4]
     non_synthetic_metrics = train_and_evaluate(
