@@ -2,7 +2,7 @@
 
 Harmful Algal Blooms (HABs) pose significant ecological, economic, and public health challenges. This project investigates the use of synthetic data augmentation, specifically using **Gaussian Copulas**, to enhance machine learning models for early HAB detection. By augmenting real-world datasets with synthetic data, the study aims to address the scarcity of high-quality datasets and improve predictive accuracy for HAB early warning systems.
 
-This repository contains all the code and data used in the study titled **"Synthetic Data Augmentation for Enhancing Harmful Algal Bloom Detection with Machine Learning"**. The project systematically evaluates the impact of synthetic data volumes on model performance.
+This repository is an official implementation of **Synthetic Data Augmentation for Enhancing Harmful Algal Bloom Detection with Machine Learning**. It includes all the code and data required to replicate the study's results, which assess the impact of synthetic data volume on model performance.
 
 ---
 
