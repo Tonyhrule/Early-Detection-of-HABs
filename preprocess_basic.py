@@ -1,69 +1,82 @@
 import os
-import joblib
 import pandas as pd
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 
-# Configuration Parameters
-DATA_PATH = 'Dataset.xlsx'
-OUTPUT_DIR = 'output'
-TEST_SIZE = 0.2  # Test data size
-RANDOM_STATE = 42  # Random seed for reproducibility
+# Paths
+DATA_PATH = "Dataset.xlsx"
+OUTPUT_DIR = "output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Configuration
+TEST_SIZE = 0.2
+RANDOM_STATE = 42
+FEATURES = ['Temperature', 'Salinity', 'UVB']
+TARGET = 'ChlorophyllaFlor'
 
 def load_data(data_path):
     """Loads the dataset from an Excel file."""
-    print("Loading dataset...")
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Dataset not found at path: {data_path}")
-    data = pd.read_excel(data_path)
-    print("Dataset loaded successfully.")
-    return data
-
-def clean_data(data):
-    """Cleans the dataset by removing rows with missing values in key columns."""
-    print("Cleaning data by dropping rows with missing values...")
-    data = data.dropna(subset=['Temperature', 'Salinity', 'UVB', 'ChlorophyllaFlor'])
-    print(f"Data cleaned. Remaining rows: {len(data)}")
-    return data
+        raise FileNotFoundError(f"Dataset not found at {data_path}")
+    print("Loading dataset...")
+    return pd.read_excel(data_path)
 
 def preprocess_data(data):
-    """Splits, imputes, and scales data for model training."""
-    print("Selecting features and target...")
-    X = data[['Temperature', 'Salinity', 'UVB']]
-    y = data['ChlorophyllaFlor']
+    """Preprocesses the dataset."""
+    print("Preprocessing data...")
 
-    print("Splitting data into training and testing sets...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
-    print("Data split complete. Training set size:", X_train.shape[0])
+    # Separate features and target
+    X = data[FEATURES]
+    y = data[TARGET]
 
-    imputer = SimpleImputer(strategy='mean')
-    X_train = imputer.fit_transform(X_train)
-    X_test = imputer.transform(X_test)
+    # Handle missing values with median imputation
+    print("Imputing missing values...")
+    imputer = SimpleImputer(strategy='median')
+    X = imputer.fit_transform(X)
 
-    print("Scaling features...")
+    # Ensure target is 1D
+    if len(y.shape) > 1:
+        print("Flattening target variable...")
+        y = y.ravel()
+
+    # Train-test split
+    print("Splitting data into train and test sets...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
+    )
+
+    # Standardize features
+    print("Standardizing features...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    print("Feature scaling complete.")
 
-    return X_train, X_test, X_train_scaled, X_test_scaled, y_train, y_test, scaler
+    print("Preprocessing complete!")
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
 
-def save_data(X_train, X_test, X_train_scaled, X_test_scaled, y_train, y_test, scaler, output_dir):
-    """Saves processed data and scaler to disk."""
-    os.makedirs(output_dir, exist_ok=True)
-    print("Saving processed data and scaler...")
-    joblib.dump((X_train, X_test, X_train_scaled, X_test_scaled, y_train, y_test), os.path.join(output_dir, 'processed_data.pkl'))
+def save_data(X_train, X_test, y_train, y_test, scaler, output_dir):
+    """Saves processed data and scaler."""
+    print("Saving processed data...")
+    joblib.dump((X_train, X_test, y_train, y_test), os.path.join(output_dir, 'processed_data.pkl'))
     joblib.dump(scaler, os.path.join(output_dir, 'scaler.pkl'))
-    print("Data and scaler saved successfully.")
+    print("Processed data saved successfully!")
 
 def main():
-    """Main function to execute the preprocessing pipeline."""
+    """Main function for preprocessing."""
+    # Load data
     data = load_data(DATA_PATH)
-    data = clean_data(data)
-    X_train, X_test, X_train_scaled, X_test_scaled, y_train, y_test, scaler = preprocess_data(data)
-    save_data(X_train, X_test, X_train_scaled, X_test_scaled, y_train, y_test, scaler, OUTPUT_DIR)
-    print("Basic preprocessing pipeline completed successfully.")
+
+    # Validate data structure
+    if not all(col in data.columns for col in FEATURES + [TARGET]):
+        raise ValueError(f"Dataset does not contain required columns: {FEATURES + [TARGET]}")
+
+    # Preprocess data
+    X_train, X_test, y_train, y_test, scaler = preprocess_data(data)
+
+    # Save preprocessed data
+    save_data(X_train, X_test, y_train, y_test, scaler, OUTPUT_DIR)
 
 if __name__ == "__main__":
     main()

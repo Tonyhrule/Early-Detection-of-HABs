@@ -1,72 +1,93 @@
 import os
 import joblib
-import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.preprocessing import PolynomialFeatures
 from math import sqrt
 
+# Directories
 output_dir = "output"
 models_dir = "models"
 
-# Function to calculate evaluation metrics
-def calculate_metrics(synthetic):
-    # Determine paths based on synthetic flag
-    model_path = os.path.join(models_dir, "stacker_synthetic_model.pkl" if synthetic else "stacker_model.pkl")
-    data_path = os.path.join(output_dir, "processed_data_with_synthetic.pkl" if synthetic else "processed_data.pkl")
+def calculate_metrics(model_path, data_path, scaler_path):
+    """Evaluates metrics for a given model and dataset."""
+    # Load model
+    try:
+        model = joblib.load(model_path)
+        print(f"Model loaded successfully from {model_path}")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    # Load model and data
-    model = joblib.load(model_path)
-    _, X_test, X_train_scaled, X_test_scaled, y_train, y_test = joblib.load(data_path)
+    # Load data
+    try:
+        X_train, X_test, y_train, y_test = joblib.load(data_path)
+        print(f"Data loaded successfully from {data_path}")
+        print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Data file not found: {data_path}")
+    except ValueError as e:
+        raise ValueError(f"Error unpacking data: {e}")
 
-    # Apply polynomial transformation
-    poly = PolynomialFeatures(degree=2, interaction_only=False, include_bias=False)
-    X_test_poly = poly.fit_transform(X_test_scaled)
+    # Load scaler
+    try:
+        scaler = joblib.load(scaler_path)
+        print(f"Scaler loaded successfully from {scaler_path}")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Scaler file not found: {scaler_path}")
+
+    # Apply scaling
+    X_test_scaled = scaler.transform(X_test)
 
     # Make predictions
-    y_pred = model.predict(X_test_poly)
+    y_pred = model.predict(X_test_scaled)
+    print(f"Predictions completed. y_pred shape: {y_pred.shape}")
 
-    # Remove NaN values from y_test and corresponding entries in y_pred
-    mask = ~np.isnan(y_test)
-    y_test = y_test[mask]
-    y_pred = y_pred[mask]
-
-    # Calculate evaluation metrics
+    # Evaluate metrics
     mse = mean_squared_error(y_test, y_pred)
     rmse = sqrt(mse)
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
 
-    # Calculate percent errors for average percent error
-    percent_errors = []
-    for actual, predicted in zip(y_test, y_pred):
-        if actual != 0:
-            percent_error = abs((predicted - actual) / actual) * 100
-            percent_errors.append(percent_error)
+    # Debugging negative R²
+    if r2 < 0:
+        print(f"Warning: Negative R² detected. Model may be overfitting or struggling to generalize.")
+        print(f"Mean of y_test: {y_test.mean()}, Variance of y_test: {y_test.var()}")
 
-    avg_percent_error = np.mean(percent_errors)
+    return mse, rmse, mae, r2
 
-    return mse, rmse, mae, r2, avg_percent_error
+# Main Execution
+if __name__ == "__main__":
+    # Correct file paths
+    for synthetic, label in [(False, "Non-Synthetic"), (True, "Synthetic")]:
+        # Define paths based on synthetic flag
+        if synthetic:
+            model_path = os.path.join(models_dir, "model_with_synthetic.pkl")
+            data_path = os.path.join(output_dir, "processed_data_with_synthetic.pkl")
+            scaler_path = os.path.join(output_dir, "scaler_with_synthetic.pkl")
+        else:
+            model_path = os.path.join(models_dir, "model_non_synthetic.pkl")
+            data_path = os.path.join(output_dir, "processed_data.pkl")
+            scaler_path = os.path.join(output_dir, "scaler.pkl")
 
-# Calculate metrics for both synthetic and non-synthetic data
-metrics_non_synthetic = calculate_metrics(synthetic=False)
-metrics_synthetic = calculate_metrics(synthetic=True)
+        # Skip evaluation if required files are missing
+        missing_files = []
+        for file_path in [model_path, data_path, scaler_path]:
+            if not os.path.exists(file_path):
+                missing_files.append(file_path)
 
-# Unpack the metrics for readability
-mse_non_synthetic, rmse_non_synthetic, mae_non_synthetic, r2_non_synthetic, avg_percent_error_non_synthetic = metrics_non_synthetic
-mse_synthetic, rmse_synthetic, mae_synthetic, r2_synthetic, avg_percent_error_synthetic = metrics_synthetic
+        if missing_files:
+            print(f"\nSkipping {label} data: Missing files:")
+            for file in missing_files:
+                print(f"  - {file}")
+            continue
 
-# Print the results
-print("Evaluation Metrics Summary:")
-print("\nNon-Synthetic Data:")
-print(f"  MSE: {mse_non_synthetic:.4f}")
-print(f"  RMSE: {rmse_non_synthetic:.4f}")
-print(f"  MAE: {mae_non_synthetic:.4f}")
-print(f"  R² Score: {r2_non_synthetic:.4f}")
-print(f"  Average Percent Error: {avg_percent_error_non_synthetic:.2f}%")
+        print(f"\nCalculating metrics for {label} data...")
+        try:
+            metrics = calculate_metrics(model_path, data_path, scaler_path)
+            mse, rmse, mae, r2 = metrics
 
-print("\nSynthetic Data:")
-print(f"  MSE: {mse_synthetic:.4f}")
-print(f"  RMSE: {rmse_synthetic:.4f}")
-print(f"  MAE: {mae_synthetic:.4f}")
-print(f"  R² Score: {r2_synthetic:.4f}")
-print(f"  Average Percent Error: {avg_percent_error_synthetic:.2f}%")
+            print(f"\n{label} Data Evaluation Metrics:")
+            print(f"  MSE: {mse:.4f}")
+            print(f"  RMSE: {rmse:.4f}")
+            print(f"  MAE: {mae:.4f}")
+            print(f"  R² Score: {r2:.4f}")
+        except Exception as e:
+            print(f"Error calculating metrics for {label} data: {e}")

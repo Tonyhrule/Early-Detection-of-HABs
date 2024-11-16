@@ -3,43 +3,40 @@ import joblib
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import PolynomialFeatures
 
+# Directories
 output_dir = "output"
 models_dir = "models"
+figures_dir = "figures"
+os.makedirs(figures_dir, exist_ok=True)  # Create figures directory if it doesn't exist
 
-# Function to calculate percent error accurately
+# Maximum percent error to include in the plot (for clipping outliers)
+MAX_PERCENT_ERROR = 100
+
 def calculate_percent_error(synthetic):
+    """Calculate percent error for synthetic or non-synthetic data."""
     # Determine paths based on synthetic flag
-    model_path = os.path.join(models_dir, "stacker_synthetic_model.pkl" if synthetic else "stacker_model.pkl")
+    model_path = os.path.join(models_dir, "model_with_synthetic.pkl" if synthetic else "model_non_synthetic.pkl")
     data_path = os.path.join(output_dir, "processed_data_with_synthetic.pkl" if synthetic else "processed_data.pkl")
 
     # Load model and data
     model = joblib.load(model_path)
-    _, X_test, X_train_scaled, X_test_scaled, y_train, y_test = joblib.load(data_path)
-
-    # Apply polynomial transformation
-    poly = PolynomialFeatures(degree=2, interaction_only=False, include_bias=False)
-    X_test_poly = poly.fit_transform(X_test_scaled)
+    X_train, X_test, y_train, y_test = joblib.load(data_path)
 
     # Make predictions
-    y_pred = model.predict(X_test_poly)
+    y_pred = model.predict(X_test)
 
     # Remove NaN values from y_test and corresponding entries in y_pred
     mask = ~np.isnan(y_test)
     y_test = y_test[mask]
     y_pred = y_pred[mask]
 
-    # Calculate percent errors
-    percent_errors = []
-    for actual, predicted in zip(y_test, y_pred):
-        if actual != 0:
-            percent_error = abs((predicted - actual) / actual) * 100
-            percent_errors.append(percent_error)
-
+    # Calculate percent errors (vectorized)
+    percent_errors = np.abs((y_pred - y_test) / y_test) * 100
+    percent_errors = np.clip(percent_errors, 0, MAX_PERCENT_ERROR)  # Clip outliers
     return percent_errors
 
-# Calculate percent errors for both synthetic and non-synthetic models
+# Calculate percent errors for both datasets
 percent_errors_non_synthetic = calculate_percent_error(synthetic=False)
 percent_errors_synthetic = calculate_percent_error(synthetic=True)
 
@@ -47,29 +44,32 @@ percent_errors_synthetic = calculate_percent_error(synthetic=True)
 avg_percent_error_non_synthetic = np.mean(percent_errors_non_synthetic)
 avg_percent_error_synthetic = np.mean(percent_errors_synthetic)
 
-# Plot density plot starting from the origin
-plt.figure(figsize=(12, 8))
-
-# Density plot for both datasets, starting from (0,0)
+# Plot density plot
+plt.figure(figsize=(10, 6))
 sns.kdeplot(percent_errors_non_synthetic, label="Non-Synthetic Data", color="blue", fill=True, alpha=0.3, linestyle="--")
 sns.kdeplot(percent_errors_synthetic, label="Synthetic Data", color="orange", fill=True, alpha=0.3, linestyle="-")
 
-# Annotate mean percent error near the peak for each dataset
-plt.text(avg_percent_error_non_synthetic, 0.06, f"Avg Non-Synthetic Error: {avg_percent_error_non_synthetic:.2f}%", color="blue")
-plt.text(avg_percent_error_synthetic, 0.05, f"Avg Synthetic Error: {avg_percent_error_synthetic:.2f}%", color="orange")
+# Adjust x-axis and y-axis limits
+plt.xlim(0, MAX_PERCENT_ERROR)
+plt.ylim(0, None)
 
-# Extend x-axis to display the full range up to 100%
-plt.xlim(0, 100)
-plt.ylim(0, None)  # Let y-axis scale naturally but start at 0
-
-plt.xlabel("Percent Error")
+# Labels, title, and legend
+plt.xlabel("Percent Error (%)")
 plt.ylabel("Density")
-plt.title("Density Plot of Percent Error for Synthetic and Non-Synthetic Data (Starting from Origin)")
+plt.title("Density Plot of Percent Error for Synthetic and Non-Synthetic Data")
 plt.legend()
-plt.grid(True)
+plt.grid(alpha=0.3)
+plt.tight_layout()
+
+# Save the plot as a PNG
+output_file = os.path.join(figures_dir, "percent_error_density.png")
+plt.savefig(output_file, dpi=300)
+print(f"Plot saved as {output_file}")
+
+# Display the plot
 plt.show()
 
-# Print summary metrics in the terminal
+# Print summary metrics
 print("\nSummary of Percent Error:")
 print(f"Average Percent Error for Non-Synthetic Data: {avg_percent_error_non_synthetic:.2f}%")
 print(f"Average Percent Error for Synthetic Data: {avg_percent_error_synthetic:.2f}%")

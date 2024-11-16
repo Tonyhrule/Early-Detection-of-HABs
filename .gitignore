@@ -1,4 +1,15 @@
+# Python bytecode
 __pycache__/
+
+# Environment variables
 .env
+
+# Archived files
 /archived/
+
+# macOS system files
 .DS_Store
+
+# Model files
+/models/*.pkl
+
