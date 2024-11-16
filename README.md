@@ -39,8 +39,7 @@ Follow the steps below to set up the repository:
 ### Setup
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/username/hab-detection.git](https://github.com/Tonyhrule/synthetic-hab-ML-augmentation.git)
-   cd hab-detection
+   git clone https://github.com/Tonyhrule/Synthetic-HAB-ML-Augmentation.git
    ```
 
 2. Install the required dependencies:
